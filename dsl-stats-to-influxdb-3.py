@@ -1,5 +1,4 @@
 import telnetlib as tn
-from influxdb import InfluxDBClient
 import time as t
 import datetime as dt
 import os
@@ -8,16 +7,17 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 import sdnotify
 from configparser import ConfigParser
+from influxdb_client import InfluxDBClient, Point
+from influxdb_client.client.write_api import SYNCHRONOUS
 
 influx_ip = None
 influx_port = None
-influx_username = None
-influx_password = None
-influx_database = None
+influx_token = None
+influx_org = None
+influx_bucket = None
 modem_ip = None
 modem_username = None
 modem_password = None
-
 
 class ParsedStats:
     def __init__(self, conn_stats_output, system_uptime):
@@ -99,72 +99,67 @@ def retrieve_stats():
     except Exception:
         raise
 
+def make_point(field_name, stat, timestamp):
+        return Point("connection").field(field_name, stat).time(timestamp)
 
-def format_json(parsedStats, timestamp):
+def get_points(parsedStats, timestamp):
     try:
         if parsedStats.connection_up:
-            return [{"measurement": "connection", "time": timestamp,
-                     "fields":
-                         {"AttDown": parsedStats.attn_down,
-                          "AttnUp": parsedStats.attn_up,
-                          "AvailableSecs": parsedStats.available_secs,
-                          "CurrDown": parsedStats.current_down,
-                          "CurrUp": parsedStats.current_up,
-                          "ErrSecsDown": parsedStats.err_secs_down,
-                          "ErrSecsUp": parsedStats.err_secs_up,
-                          "InterleavingDown": parsedStats.int_down,
-                          "InterleavingUp": parsedStats.int_up,
-                          "MaxDown": parsedStats.max_down,
-                          "MaxUp": parsedStats.max_up,
-                          "PwrDown": parsedStats.pwr_down,
-                          "PwrUp": parsedStats.pwr_up,
-                          "SeriousErrSecsDown": parsedStats.serious_err_secs_down,
-                          "SeriousErrSecsUp": parsedStats.serious_err_secs_up,
-                          "SNRDown": parsedStats.snr_down,
-                          "SNRUp": parsedStats.snr_up,
-                          "SystemUptime": parsedStats.system_uptime,
-                          "UnavailableSecsDown": parsedStats.unavailable_secs_down,
-                          "UnavailableSecsUp": parsedStats.unavailable_secs_up
-                          }}]
+            return [
+                make_point("AttDown", parsedStats.attn_down, timestamp),
+                make_point("AttnUp", parsedStats.attn_up, timestamp),
+                make_point("AvailableSecs", parsedStats.available_secs, timestamp),
+                make_point("CurrDown", parsedStats.current_down, timestamp),
+                make_point("CurrUp", parsedStats.current_up, timestamp),
+                make_point("ErrSecsDown", parsedStats.err_secs_down, timestamp),
+                make_point("ErrSecsUp", parsedStats.err_secs_up, timestamp),
+                make_point("InterleavingDown", parsedStats.int_down, timestamp),
+                make_point("InterleavingUp", parsedStats.int_up, timestamp),
+                make_point("MaxDown", parsedStats.max_down, timestamp),
+                make_point("MaxUp", parsedStats.max_up, timestamp),
+                make_point("PwrDown", parsedStats.pwr_down, timestamp),
+                make_point("PwrUp", parsedStats.pwr_up, timestamp),
+                make_point("SeriousErrSecsDown", parsedStats.serious_err_secs_down, timestamp),
+                make_point("SeriousErrSecsUp", parsedStats.serious_err_secs_up, timestamp),
+                make_point("SNRDown", parsedStats.snr_down, timestamp),
+                make_point("SNRUp", parsedStats.snr_up, timestamp),
+                make_point("SystemUptime", parsedStats.system_uptime, timestamp),
+                make_point("UnavailableSecsDown", parsedStats.unavailable_secs_down, timestamp),
+                make_point("UnavailableSecsUp", parsedStats.unavailable_secs_up, timestamp),
+            ]
         else:
-            return [{"measurement": "connection", "time": timestamp,
-                     "fields":
-                         {"AttDown": -1,
-                          "AttnUp": -1,
-                          "AvailableSecs": -1,
-                          "CurrDown": -1,
-                          "CurrUp": -1,
-                          "ErrSecsDown": -1,
-                          "ErrSecsUp": -1,
-                          "InterleavingDown": -1,
-                          "InterleavingUp": -1,
-                          "MaxDown": -1,
-                          "MaxUp": -1,
-                          "PwrDown": -1,
-                          "PwrUp": -1,
-                          "SeriousErrSecsDown": -1,
-                          "SeriousErrSecsUp": -1,
-                          "SNRDown": -1,
-                          "SNRUp": -1,
-                          "SystemUptime": parsedStats.system_uptime,
-                          "UnavailableSecsDown": -1,
-                          "UnavailableSecsUp": -1
-                          }}]
+            return [
+                make_point("AttDown", -1, timestamp),
+                make_point("AttnUp", -1, timestamp),
+                make_point("AvailableSecs", -1, timestamp),
+                make_point("CurrDown", -1, timestamp),
+                make_point("CurrUp", -1, timestamp),
+                make_point("ErrSecsDown", -1, timestamp),
+                make_point("ErrSecsUp", -1, timestamp),
+                make_point("InterleavingDown", -1, timestamp),
+                make_point("InterleavingUp", -1, timestamp),
+                make_point("MaxDown", -1, timestamp),
+                make_point("MaxUp", -1, timestamp),
+                make_point("PwrDown", -1, timestamp),
+                make_point("PwrUp", -1, timestamp),
+                make_point("SeriousErrSecsDown", -1, timestamp),
+                make_point("SeriousErrSecsUp", -1, timestamp),
+                make_point("SNRDown", -1, timestamp),
+                make_point("SNRUp", -1, timestamp),
+                make_point("SystemUptime", parsedStats.system_uptime, timestamp),
+                make_point("UnavailableSecsDown", -1, timestamp),
+                make_point("UnavailableSecsUp", -1, timestamp),
+            ]
     except Exception:
         raise
 
-
-def send_stats_to_influxdb(parsed_stats, timestamp):
+def send_stats_to_influxdb(parsedStats, timestamp):
+    client =  InfluxDBClient(url="http://"+influx_ip+":"+str(influx_port), token=influx_token, org=influx_org,verify_ssl=False)
+    write_api = client.write_api(write_options=SYNCHRONOUS)
     try:
-        db_client = InfluxDBClient(influx_ip, influx_port, influx_username, influx_password, influx_database)
-        if not {u'name': u'dslstats'} in db_client.get_list_database():
-            db_client.create_database("dslstats")
-            db_client.create_retention_policy("dslstats-retention-policy", "52w", "1", default=True)
-        json = format_json(parsed_stats, timestamp)
-        db_client.write_points(json)
-    except Exception:
-        raise
-
+        write_api.write(bucket=influx_bucket, record=get_points(parsedStats, timestamp))
+    except Exception as error:
+        print(error)
 
 n = sdnotify.SystemdNotifier()
 n.notify("READY=1")
@@ -177,15 +172,15 @@ config.read(config_path)
 if "InfluxDB" in config:
     influx_ip = config["InfluxDB"].get("ip-address")
     influx_port = config["InfluxDB"].get("port")
-    influx_username = config["InfluxDB"].get("username")
-    influx_password = config["InfluxDB"].get("password")
-    influx_database = config["InfluxDB"].get("database")
+    influx_token = config["InfluxDB"].get("token")
+    influx_bucket = config["InfluxDB"].get("bucket")
+    influx_org = config["InfluxDB"].get("org")
     if influx_port is not None:
         influx_port = int(influx_port)
 else:
     raise Exception("Wasn't able to find the 'InfluxDB' section in the config")
 
-if influx_ip is None or influx_port is None or influx_username is None or influx_password is None or influx_database is None:
+if influx_ip is None or influx_port is None or influx_token is None or influx_org is None or influx_bucket is None:
     raise Exception("At least one piece of Influx connection information is missing from the config")
 
 if "Modem" in config:
