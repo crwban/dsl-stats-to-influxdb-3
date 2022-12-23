@@ -44,6 +44,10 @@ class ParsedStats:
             pwr_split = pwr_line.split("\t\t")
             self.pwr_down = float(pwr_split[0])
             self.pwr_up = float(pwr_split[1])
+            interleaving_line = conn_stats_output_split[28].replace("D:\t\t", "")
+            interleaving_split = interleaving_line.split("\t\t")
+            self.int_down = int(interleaving_split[0])
+            self.int_up = int(interleaving_split[1])
             err_secs_line = conn_stats_output_split[98].replace("ES:\t\t", "")
             err_secs_split = err_secs_line.split("\t\t")
             self.err_secs_up = int(err_secs_split[0])
@@ -108,6 +112,8 @@ def format_json(parsedStats, timestamp):
                           "CurrUp": parsedStats.current_up,
                           "ErrSecsDown": parsedStats.err_secs_down,
                           "ErrSecsUp": parsedStats.err_secs_up,
+                          "InterleavingDown": parsedStats.int_down,
+                          "InterleavingUp": parsedStats.int_up,
                           "MaxDown": parsedStats.max_down,
                           "MaxUp": parsedStats.max_up,
                           "PwrDown": parsedStats.pwr_down,
@@ -130,6 +136,8 @@ def format_json(parsedStats, timestamp):
                           "CurrUp": -1,
                           "ErrSecsDown": -1,
                           "ErrSecsUp": -1,
+                          "InterleavingDown": -1,
+                          "InterleavingUp": -1,
                           "MaxDown": -1,
                           "MaxUp": -1,
                           "PwrDown": -1,
