@@ -41,7 +41,7 @@ class ParsedStats:
             self.attn_down = float(attn_split[0])
             self.attn_up = float(attn_split[1])
             pwr_line = conn_stats_output_split[18].replace("Pwr(dBm):\t ", "")
-            pwr_split = pwr_line.split("\t\t ")
+            pwr_split = pwr_line.split("\t\t")
             self.pwr_down = float(pwr_split[0])
             self.pwr_up = float(pwr_split[1])
             err_secs_line = conn_stats_output_split[98].replace("ES:\t\t", "")
